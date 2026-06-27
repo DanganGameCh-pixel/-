@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マルチプレイ抽選ルーレット</title>
+    <style>
+        :root {
+            --primary: #d4af37;
+            --bg-dark: #1a1a1a;
+            --panel-bg: #2d2d2d;
+            --text-light: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: var(--panel-bg);
+            border: 2px solid var(--primary);
+            border-radius: 8px;
+            padding: 20px;
+            box-sizing: border-box;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            contain: content; /* 描画を最適化して最速化 */
+        }
+
+        .screen { display: none; }
+        .active { display: block; }
+
+        h2 {
+            text-align: center;
+            color: var(--primary);
+            border-bottom: 1px solid var(--primary);
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 6px; font-weight: bold; font-size: 14px; }
+
+        select, textarea {
+            width: 100%;
+            padding: 10px;
+            background: #111;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 15px;
+            font-family: inherit;
+        }
+
+        textarea {
+            resize: vertical;
+            height: 250px; /* 33体が見渡しやすく編集しやすい高さ */
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary);
+            color: #000;
+            border: none;
+            font-weight: bold;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        button:disabled { background: #555; cursor: not-allowed; }
+
+        .roulette-box {
+            background: #111;
+            border: 1px solid var(--primary);
+            padding: 15px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            min-height: 30px;
+        }
+        .rolling { color: #ff4500; }
+
+        .result-area {
+            margin-top: 20px;
+            border-top: 1px dashed var(--primary);
+            padding-top: 15px;
+        }
+        .result-item {
+            background: #222;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            border-left: 4px solid var(--primary);
+            border-radius: 0 4px 4px 0;
+            font-size: 14px;
+        }
+        .nav-btn { background: #444; color: #fff; }
+        .help-text { font-size: 12px; color: #aaa; margin-top: 2px; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- 画面1：初期設定 -->
+    <div id="screen1" class="screen active">
+        <h2>初期設定</h2>
+        
+        <div class="form-group">
+            <label for="playerCount">① 参加人数選択</label>
+            <select id="playerCount">
+                <option value="1">1人</option>
+                <option value="2">2人</option>
+                <option value="3">3人</option>
+                <option value="4" selected>4人</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="monsterTextArea">② モンスター一覧（文字を消すと対象外になります）</label>
+            <div class="help-text">※戦いたくないモンスターの名前をバックスペース等で消してください</div>
+            <textarea id="monsterTextArea"></textarea>
+        </div>
+
+        <button id="startBtn">START</button>
+    </div>
+
+    <!-- 画面2：ルーレット表示画面 -->
+    <div id="screen2" class="screen">
+        <h2>抽選ルーレット</h2>
+        
+        <label>【ターゲットモンスター】</label>
+        <div id="monsterDisplay" class="roulette-box">未確定</div>
+        <button id="monsterRollBtn">① モンスターを抽選する</button>
+
+        <label style="margin-top: 15px; display: block;">【参加者＆武器抽選】</label>
+        <div id="weaponDisplay" class="roulette-box">次のプレイヤー</div>
+        <button id="weaponRollBtn" disabled>② プレイヤーの武器を抽選</button>
+
+        <div class="result-area">
+            <label>【抽選結果（最大4名）】</label>
+            <div id="resultList"></div>
+        </div>
+
+        <div style="margin-top: 25px;">
+            <button id="resetBtn" class="nav-btn">リセット（この画面のままクリア）</button>
+            <button id="backBtn" class="nav-btn">設定画面に戻る（リストを全復活）</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // マスターデータ：初期状態の33体（改行区切り）
+    const initialMonsterText = 
+`チャタカブラ
+ケマトリス
+ラバラバリナ
+ババコンガ
+バーラハーラ
+ドシャグマ
+ププロポル
+ネルスキュラ
+ヒラバミ
+アジャラカン
+シーウー
+イャンクック
+ゲリョス
+リオレイア
+リオレウス
+グラビモス
+ドドブランゴ
+護竜ドシャグマ
+護竜リオレウス
+護竜オドガロン亜種
+護竜アンジャナフ亜種
+ゾ・シア
+タマミツネ
+ラギアクルス
+セルレギオス
+ゴア・マガラ
+レ・ダウ
+ウズ・トゥナ
+ヌ・エグドラ
+ジン・ダハド
+オメガ・プラネテス
+ゴグマジオス
+アルシュベルド`;
+
+    const weaponList = ["大剣", "太刀", "片手剣", "双剣", "ハンマー", "狩猟笛", "ランス", "ガンランス", "スラッシュアックス", "チャージアックス", "操虫棍", "ライトボウガン", "ヘビィボウガン", "弓"];
+
+    let config = { players: 4 };
+    let currentIteration = 0;
+    const maxHistory = 4;
+    const wLen = weaponList.length;
+
+    // 残ったモンスターだけが入る抽選プール（配列）
+    let optimizedMonsterPool = [];
+
+    // DOM要素
+    const s1 = document.getElementById('screen1');
+    const s2 = document.getElementById('screen2');
+    const startBtn = document.getElementById('startBtn');
+    const playerCount = document.getElementById('playerCount');
+    const monsterTextArea = document.getElementById('monsterTextArea');
+    
+    const monsterDisplay = document.getElementById('monsterDisplay');
+    const monsterRollBtn = document.getElementById('monsterRollBtn');
+    const weaponDisplay = document.getElementById('weaponDisplay');
+    const weaponRollBtn = document.getElementById('weaponRollBtn');
+    const resultList = document.getElementById('resultList');
+    
+    const resetBtn = document.getElementById('resetBtn');
+    const backBtn = document.getElementById('backBtn');
+
+    // アプリ起動時にテキストエリアにマスターリストを注入
+    monsterTextArea.value = initialMonsterText;
+
+    function changeScreen(showS1) {
+        if(showS1) {
+            s1.classList.add('active');
+            s2.classList.remove('active');
+        } else {
+            s1.classList.remove('active');
+            s2.classList.add('active');
+        }
+    }
+
+    // STARTボタン押下時：今テキストエリアに残っている名前だけを回収する
+    startBtn.addEventListener('click', () => {
+        config.players = parseInt(playerCount.value);
+        
+        // テキストエリアから1行ずつ読み込んで配列にする
+        const lines = monsterTextArea.value.split('\n');
+        optimizedMonsterPool = [];
+
+        lines.forEach(line => {
+            const name = line.trim();
+            if (name.length > 0) {
+                optimizedMonsterPool.push(name); // 消されていない文字だけを抽選箱へ
+            }
+        });
+
+        // 万が一すべて消去されていた場合の安全装置
+        if (optimizedMonsterPool.length === 0) {
+            optimizedMonsterPool = ["（すべてのモンスターが消去されています）"];
+        }
+
+        initScreen2();
+        changeScreen(false);
+    });
+
+    function initScreen2() {
+        currentIteration = 0;
+        resultList.innerHTML = "";
+        monsterDisplay.textContent = "未確定（要抽選）";
+        monsterDisplay.classList.remove('rolling');
+        weaponDisplay.textContent = `プレイヤー 1 の抽選待ち`;
+        weaponRollBtn.disabled = true;
+        monsterRollBtn.disabled = false;
+    }
+
+    // ① モンスター抽選ルーレット
+    monsterRollBtn.addEventListener('click', () => {
+        monsterRollBtn.disabled = true;
+        monsterDisplay.classList.add('rolling');
+        let counter = 0;
+        const poolLen = optimizedMonsterPool.length;
+        
+        const interval = setInterval(() => {
+            monsterDisplay.textContent = optimizedMonsterPool[Math.floor(Math.random() * poolLen)];
+            counter++;
+            if(counter > 15) {
+                clearInterval(interval);
+                monsterDisplay.classList.remove('rolling');
+                weaponRollBtn.disabled = false;
+            }
+        }, 60);
+    });
+
+    // ② 武器抽選ルーレット
+    weaponRollBtn.addEventListener('click', () => {
+        if (currentIteration >= config.players) return;
+
+        weaponRollBtn.disabled = true;
+        weaponDisplay.classList.add('rolling');
+        let counter = 0;
+        let pNum = currentIteration + 1;
+
+        const interval = setInterval(() => {
+            weaponDisplay.textContent = `P${pNum}: ` + weaponList[Math.floor(Math.random() * wLen)];
+            counter++;
+            
+            if(counter > 12) {
+                clearInterval(interval);
+                weaponDisplay.classList.remove('rolling');
+                
+                addResult(weaponDisplay.textContent);
+                currentIteration++;
+
+                if (currentIteration < config.players) {
+                    weaponDisplay.textContent = `プレイヤー ${currentIteration + 1} の抽選待ち`;
+                    weaponRollBtn.disabled = false;
+                } else {
+                    weaponDisplay.textContent = "全員の抽選が完了しました！";
+                    weaponRollBtn.disabled = true;
+                }
+            }
+        }, 60);
+    });
+
+    function addResult(text) {
+        const item = document.createElement('div');
+        item.className = 'result-item';
+        item.textContent = text;
+        resultList.appendChild(item);
+
+        while (resultList.children.length > maxHistory) {
+            resultList.removeChild(resultList.firstChild);
+        }
+    }
+
+    // ④ ナビゲーション：リセット（ルーレット画面のままクリア）
+    resetBtn.addEventListener('click', () => { initScreen2(); });
+
+    // ④ ナビゲーション：設定画面に戻る（★ここでテキストを初期データに戻す）
+    backBtn.addEventListener('click', () => {
+        monsterTextArea.value = initialMonsterText; // テキストエリアを完全復活させる
+        changeScreen(true);
+    });
+</script>
+</body>
+</html>
